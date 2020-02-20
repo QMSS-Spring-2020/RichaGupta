@@ -1,0 +1,226 @@
+---
+title: "Practicum"
+author: "Richa Gupta"
+date: "13/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE, message=FALSE}
+#install.packages("kableExtra")
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+#install.packages("wordcloud")
+#install.packages("tm")
+library(wordcloud)
+library(tm)
+```
+
+### Reading the dataset
+I am for the purposes of the assignment using only a subset of the data with first 500 rows.
+
+```{r}
+setwd("~/Desktop/Practicum")
+dataset <- read.csv('complaints_subset.csv')
+```
+Let us see what the data looks like.
+```{r}
+head(dataset) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("condensed"), fixed_thead = T) %>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+### Data Analysis
+
+```{r}
+str(dataset)
+```
+
+We can see that the columns are of type factor. We will have to change that to be useful later.
+
+### Data Manipulation
+
+Converting the date columns in date type.
+I am also creating three new columns which will store the year, month and date part of the date complaint was received separately. This will be useful for grouping the data according to months or years or dates later.
+```{r}
+dataset$Date.received <- ymd(dataset$Date.received)
+dataset$Date.received.year <- format(as.Date(dataset$Date.received), "%Y") %>% as.integer()
+dataset$Date.received.month <- format(as.Date(dataset$Date.received), "%m") %>% as.integer()
+dataset$Date.received.date <- format(as.Date(dataset$Date.received), "%d") %>% as.integer()
+```
+
+
+### Data Summarization
+
+To extract meaningful insights from the data through the month column, I have grouped the complaints by Company and month of the date in which the complaint was received.
+```{r}
+dataset.summary <- dataset %>% 
+  select(Company, Date.received.month) %>%
+  group_by(Company, Date.received.month) %>%
+  summarise(total = n()) %>%
+  arrange(Company,Date.received.month)
+```
+
+```{r}
+dataset.summary %>%
+  kable() %>%
+  kable_styling(full_width = F, position = "center", fixed_thead = T) %>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+Here we can see what months did which company receive how many complaints.
+
+Doing the same analysis now but only for EQUIFAX, INC. and plotting the months in which the complaints were received by this company.
+
+```{r}
+dataset.subset.1 <- dataset.summary %>%
+  filter(Company == 'EQUIFAX, INC.')
+dataset.subset.1 %>% kable() %>%
+  kable_styling(full_width = F, position = "center", fixed_thead = T) %>%
+  scroll_box(width = "100%", height = "100%")
+```
+
+```{r}
+ggplot(data = dataset.subset.1, aes(x = Date.received.month, y = total)) + 
+  geom_line() + 
+  ggtitle("Month wise distribution of complaints recieved by EQUIFAX") + 
+  xlab("Month") + 
+  ylab("Number of complaints") + 
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10","11","12")) +
+  theme_minimal()
+```
+
+```{r}
+dataset.subset.2 <- dataset.summary %>%
+  filter(Company == 'TRANSUNION INTERMEDIATE HOLDINGS, INC.')
+dataset.subset.2 %>% kable() %>%
+  kable_styling(full_width = F, position = "center", fixed_thead = T) %>%
+  scroll_box(width = "100%", height = "100%")
+```
+```{r}
+ggplot(data = dataset.subset.2, aes(x = Date.received.month, y = total)) + 
+  geom_line() + 
+  ggtitle("Month wise distribution of complaints recieved by TRANSUNION INTERMEDIATE HOLDINGS, INC.") + 
+  xlab("Month") + 
+  ylab("Number of complaints") + 
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10","11","12")) +
+  theme_minimal()
+```
+
+### Replication
+To make this process easy, I have developed this into a function. You have to pass the argument name of the company for which you need information and the function will return a table with summarised information and a plot for easy understanding.
+```{r}
+get_monthly_summary <- function(company_name){
+  dataset.subset.temp <- dataset.summary %>%
+    filter(Company == company_name)
+  dataset.subset.temp %>% print()
+  dataset.subset.temp %>% kable() %>%
+    kable_styling(full_width = F, position = "center", fixed_thead = T) %>%
+    scroll_box(width = "100%", height = "100%")
+  ggplot(data = dataset.subset.temp, aes(x = Date.received.month, y = total)) + 
+    geom_line() + 
+    ggtitle("Month wise distribution of complaints recieved") + 
+    xlab("Month") + 
+    ylab("Number of complaints") + 
+    scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10","11","12")) +
+    theme_minimal()
+}
+```
+
+```{r}
+get_monthly_summary('TRANSUNION INTERMEDIATE HOLDINGS, INC.')
+```
+
+```{r}
+get_monthly_summary('Experian Information Solutions Inc.')
+```
+
+Summarising complaints for individual companies is helpful but let us see if there is a pattern in the overall complaints.
+
+```{r}
+hist(dataset.summary$Date.received.month)
+```
+### Key Takeaway 1:
+It looks like most of the complaints are receieved during March and April.
+
+Make a function which will return the word cloud of the most commonly used words for the complaints of a company.
+```{r, warning=FALSE, message=FALSE}
+generate_wordcloud <- function(company_name){
+  dataset.subset.temp <- dataset %>% filter(Company == company_name) %>% select(Consumer.complaint.narrative)
+  #Create a vector containing only the text
+  text.temp <- dataset.subset.temp$Consumer.complaint.narrative
+  # Create a corpus  
+  docs.temp <- Corpus(VectorSource(text.temp))
+  docs.temp <- docs.temp %>%
+    tm_map(removeNumbers) %>%
+    tm_map(removePunctuation) %>%
+    tm_map(stripWhitespace)
+  docs.temp <- tm_map(docs.temp, content_transformer(tolower))
+  #removeXXXX = "XXXX"
+  words_remove = c("xxxx", "xxxxxxxx", "xx")
+  docs.temp <- tm_map(docs.temp, removeWords, stopwords("english"))
+  docs.temp <- tm_map(docs.temp, removeWords, words_remove)
+  dtm <- TermDocumentMatrix(docs.temp) 
+  matrix <- as.matrix(dtm) 
+  words <- sort(rowSums(matrix),decreasing=TRUE) 
+  df <- data.frame(word = names(words),freq=words)
+  set.seed(1234) # for reproducibility 
+  wordcloud(words = df$word, freq = df$freq, min.freq = 1, max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
+generate_wordcloud('TRANSUNION INTERMEDIATE HOLDINGS, INC.')
+```
+
+### Key Takeaway 2:
+The data seems to have blocked out data like XXXX which is showing up in the wordcloud. I had to manually remove words like those from the comments.
+
+
+```{r}
+head(dataset)
+
+# Company.response.to.consumer
+# Product
+# Sub.product - highly correlated with Product
+# Issue
+# Sub.issue - highly correlated with issue
+# Consumer.complaint.narrative
+# State ##Removing this post observation
+# Consumer.consent.provided.
+# Submitted.via ##removing this post observation
+
+for(i in 1:nrow(dataset)){
+  if(dataset$Consumer.complaint.narrative[i] == ""){
+    dataset$Consumer.complaint.narrative.present[i] = 0
+  } else {
+    dataset$Consumer.complaint.narrative.present[i] = 1
+  }
+  if(dataset$Company.response.to.consumer[i] == "Closed with monetary relief"){
+    dataset$Closed.with.monetary.relief[i] = 1
+  }
+  else {
+    dataset$Closed.with.monetary.relief[i] = 0
+  }
+}
+
+
+lm1 <- lm(Closed.with.monetary.relief ~ Product + Issue + Consumer.complaint.narrative.present + Consumer.consent.provided., data = dataset)
+summary(lm1)
+```
+Plotting the variation between states and number of complaints that received monetary relief.
+
+```{r}
+#The states that had 0 monetary relief have been removed here for clarity in the graph.
+dataset %>% group_by(State) %>% summarise(avg = mean(Closed.with.monetary.relief), total = n()) %>% filter(avg != 0) %>% arrange(desc(avg)) %>% ggplot(aes(x = as.factor(State), y = avg)) + geom_point(color = "red")
+```
+
+### Key takeaway 3
+
+It seems that for this subset of data state 'MA' has the highest number of complaints which have receieved monetary compensation.
